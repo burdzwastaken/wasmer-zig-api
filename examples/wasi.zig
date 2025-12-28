@@ -44,7 +44,7 @@ pub fn run() !void {
 
     std.log.info("setting up WASI...", .{});
 
-    const wasi_config = try wasmer.WasiConfig.init();
+    const wasi_config = try wasmer.WasiConfig.init("example_program");
 
     const js_string =
         \\function greet(name) {

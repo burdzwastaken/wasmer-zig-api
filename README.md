@@ -8,7 +8,7 @@ All WASI APIs are also implemented.
 
 All tests from the "wasmer" lib C repository are also reimplemented on zig. You can learn more about the API of this module through rich examples.
 
-The current module works with Zig 0.14.0+.
+The current module works with Zig 0.15.x.
 
 ## Wasmer C API test examples [WIP]
 
@@ -41,25 +41,26 @@ zig build run -Dexamples=true
 In your zig project folder (where build.zig is located), run:
 
 ```bash
-zig fetch --save "git+https://github.com/Afirium/wasmer-zig-api#v0.3.0"
+zig fetch --save "git+https://github.com/Afirium/wasmer-zig-api#v0.4.0"
 ```
 
 Then, in your `build.zig`'s `build` function, add the following before
 `b.installArtifact(exe)`:
 
 ```zig 
-    const wasmerZigAPI= b.dependency("wasmer_zig_api", .{
-        .target = target,
-        .optimize = optimize,
-    });
-    exe.root_module.addImport("wasmer", wasmerZigAPI.module("wasmer"));
-    exe.linkLibC();
-    exe.addLibraryPath(.{ .cwd_relative = "/home/path_to_your_wasmer/.wasmer/lib" });
-    exe.linkSystemLibrary("wasmer");
+const wasmer_zig_api = b.dependency("wasmer_zig_api", .{
+    .target = target,
+    .optimize = optimize,
+});
+
+exe.root_module.addImport("wasmer", wasmer_zig_api.module("wasmer"));
+exe.root_module.link_libc = true;
+exe.root_module.addLibraryPath(.{ .cwd_relative = "/home/path_to_your_wasmer/.wasmer/lib" });
+exe.root_module.linkSystemLibrary("wasmer", .{});
 ```
 
 ## Status
 
-| Refname   | Wasmer runtime version | Zig `0.12.x` | Zig `0.13.x` | Zig `0.14.x` | Zig `0.15.0-dev` |
-|:----------|:-----------------------|:------------:|:------------:|:------------:|:----------------:|
-| `v0.3.0`  | `v4.0.0+`, `v5.0.0+`   | ❌           | ❌           | ✅           | ✅              |
+| Refname   | Wasmer runtime version | Zig `0.15.x`     |
+|:----------|:-----------------------|:----------------:|
+| `v0.4.0`  | `v4.0.0+`, `v5.0.0+`   | ✅               |

@@ -25,9 +25,9 @@ pub const WasiConfig = opaque {
         std_err: bool = true,
     };
 
-    /// Initialize a new WASI configuration
-    pub fn init() !*WasiConfig {
-        return wasi_config_new() orelse WasiError.ConfigInit;
+    /// Initialize a new WASI configuration with a program name
+    pub fn init(program_name: [:0]const u8) !*WasiConfig {
+        return wasi_config_new(program_name.ptr) orelse WasiError.ConfigInit;
     }
 
     /// Clean up WASI configuration
@@ -102,7 +102,7 @@ pub const WasiConfig = opaque {
     }
 
     // External C function declarations
-    extern "c" fn wasi_config_new() ?*WasiConfig;
+    extern "c" fn wasi_config_new([*:0]const u8) ?*WasiConfig;
     extern "c" fn wasi_config_delete(?*WasiConfig) void;
     extern "c" fn wasi_config_inherit_argv(?*WasiConfig) void;
     extern "c" fn wasi_config_inherit_env(?*WasiConfig) void;
