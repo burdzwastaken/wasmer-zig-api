@@ -140,13 +140,25 @@ pub const Func = opaque {
 
         CALLBACK = @intFromPtr(func_ptr);
 
-        var args = ValtypeVec.empty();
-        var results = ValtypeVec.empty();
-
-        const functype = wasm_functype_new(&args, &results) orelse return Error.FuncInit;
-        defer wasm_functype_delete(functype);
+        const functype = FuncType.init(&.{}, &.{}) orelse return Error.FuncInit;
+        defer functype.deinit();
 
         return wasm_func_new(store, functype, cb) orelse Error.FuncInit;
+    }
+
+    pub const CallbackWithEnv = fn (*anyopaque, *const ValVec, *ValVec) callconv(c_callconv) ?*Trap;
+    pub const Finalizer = ?*const fn (?*anyopaque) callconv(c_callconv) void;
+
+    /// Creates a host function with an environment pointer and arbitrary signature.
+    /// The callback receives (env, args, results) and can read/write WASM values.
+    pub fn initWithEnv(
+        store: *Store,
+        func_type: *FuncType,
+        callback: CallbackWithEnv,
+        env: *anyopaque,
+        finalizer: Finalizer,
+    ) !*Func {
+        return wasm_func_new_with_env(store, func_type, callback, env, finalizer) orelse Error.FuncInit;
     }
 
     /// Returns the `Func` as an `Extern`
@@ -306,7 +318,8 @@ pub const Func = opaque {
         };
     }
 
-    extern "c" fn wasm_func_new(*Store, ?*anyopaque, *const Callback) ?*Func;
+    extern "c" fn wasm_func_new(*Store, *FuncType, *const Callback) ?*Func;
+    extern "c" fn wasm_func_new_with_env(*Store, *FuncType, *const CallbackWithEnv, ?*anyopaque, Finalizer) ?*Func;
     extern "c" fn wasm_func_delete(*Func) void;
     extern "c" fn wasm_func_as_extern(*Func) ?*Extern;
     extern "c" fn wasm_func_copy(*const Func) ?*Func;
@@ -339,7 +352,17 @@ pub const Instance = opaque {
             return Error.InstanceInit;
         }
 
-        return instance orelse Error.InstanceInit;
+        if (instance == null) {
+            const c = @cImport(@cInclude("wasmer.h"));
+            const err_len = c.wasmer_last_error_length();
+            if (err_len > 0) {
+                var buf: [512]u8 = undefined;
+                _ = c.wasmer_last_error_message(&buf, @min(512, @as(c_int, @intCast(err_len))));
+                log.err("Wasmer error: {s}", .{buf[0..@intCast(err_len)]});
+            }
+            return Error.InstanceInit;
+        }
+        return instance.?;
     }
 
     pub fn initFromImports(store: *Store, module: *Module, imports: *ExternVec) !*Instance {
@@ -569,6 +592,13 @@ pub const Memory = opaque {
         return wasm_memory_same(self, other);
     }
 
+    /// Returns this Memory as an Extern for use in imports
+    pub fn asExtern(self: *Memory) *Extern {
+        return wasm_memory_as_extern(self).?;
+    }
+
+    extern "c" fn wasm_memory_as_extern(*Memory) ?*Extern;
+
     /// Returns a pointer-to-many bytes
     ///
     /// Tip: Use toSlice() to get a slice for better ergonomics
@@ -774,8 +804,12 @@ pub const ValtypeVec = extern struct {
     data: [*]?*Valtype,
 
     pub fn empty() ValtypeVec {
-        return .{ .size = 0, .data = undefined };
+        var vec: ValtypeVec = undefined;
+        wasm_valtype_vec_new_empty(&vec);
+        return vec;
     }
+
+    extern "c" fn wasm_valtype_vec_new_empty(*ValtypeVec) void;
 };
 
 pub const ValVec = extern struct {
@@ -796,10 +830,64 @@ pub const ValVec = extern struct {
     extern "c" fn wasm_val_vec_delete(*ValVec) void;
 };
 
-// Func
-pub extern "c" fn wasm_functype_new(args: *ValtypeVec, results: *ValtypeVec) ?*anyopaque;
-pub extern "c" fn wasm_functype_delete(functype: *anyopaque) void;
+pub const FuncType = opaque {
+    pub fn init(params: []const Valkind, results: []const Valkind) ?*FuncType {
+        var params_vec: ValtypeVec = undefined;
+        var results_vec: ValtypeVec = undefined;
+
+        if (params.len == 0) {
+            params_vec = ValtypeVec.empty();
+        } else {
+            wasm_valtype_vec_new_uninitialized(&params_vec, params.len);
+            for (params, 0..) |kind, i| {
+                params_vec.data[i] = Valtype.init(kind);
+            }
+        }
+
+        if (results.len == 0) {
+            results_vec = ValtypeVec.empty();
+        } else {
+            wasm_valtype_vec_new_uninitialized(&results_vec, results.len);
+            for (results, 0..) |kind, i| {
+                results_vec.data[i] = Valtype.init(kind);
+            }
+        }
+
+        return wasm_functype_new(&params_vec, &results_vec);
+    }
+
+    pub fn deinit(self: *FuncType) void {
+        wasm_functype_delete(self);
+    }
+
+    extern "c" fn wasm_functype_new(*ValtypeVec, *ValtypeVec) ?*FuncType;
+    extern "c" fn wasm_functype_delete(*FuncType) void;
+    extern "c" fn wasm_valtype_vec_new_uninitialized(*ValtypeVec, usize) void;
+};
 
 test "run_tests" {
     testing.refAllDecls(@This());
+}
+
+fn testCallbackWithEnv(_: *anyopaque, _: *const ValVec, _: *ValVec) callconv(.c) ?*Trap {
+    return null;
+}
+
+fn noopFinalizer(_: ?*anyopaque) callconv(.c) void {}
+
+test "initWithEnv creates host function" {
+    const engine = try Engine.init();
+    defer engine.deinit();
+
+    const store = try Store.init(engine);
+    defer store.deinit();
+
+    const func_type = FuncType.init(&.{.i32}, &.{.i32}) orelse return error.FuncTypeInit;
+    defer func_type.deinit();
+
+    var env: u8 = 0;
+    const func = try Func.initWithEnv(store, func_type, testCallbackWithEnv, &env, noopFinalizer);
+    defer func.deinit();
+
+    _ = func.asExtern();
 }
