@@ -2,7 +2,14 @@ const std = @import("std");
 const builtin = @import("builtin");
 pub const wasm = @import("./wasm.zig");
 
-pub usingnamespace @import("./wasi.zig");
+pub const wasi = @import("./wasi.zig");
+pub const WasiError = wasi.WasiError;
+pub const WasiConfig = wasi.WasiConfig;
+pub const WasiEnv = wasi.WasiEnv;
+pub const WasiVersion = wasi.WasiVersion;
+pub const getWasiVersion = wasi.getWasiVersion;
+pub const getImports = wasi.getImports;
+pub const getStartFunction = wasi.getStartFunction;
 
 // Re-exports
 pub const ExternVec = wasm.ExternVec;

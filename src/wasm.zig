@@ -4,6 +4,8 @@ const meta = std.meta;
 const trait = std.meta.trait;
 const log = std.log.scoped(.wasm_zig);
 
+const c_callconv: std.builtin.CallingConvention = .c;
+
 var CALLBACK: usize = undefined;
 
 // @TODO: Split these up into own error sets
@@ -98,7 +100,7 @@ pub const Module = opaque {
     extern "c" fn wasm_module_exports(?*const Module, *ExportTypeVec) void;
 };
 
-fn cb(params: ?*const Valtype, results: ?*Valtype) callconv(.C) ?*Trap {
+fn cb(params: ?*const Valtype, results: ?*Valtype) callconv(c_callconv) ?*Trap {
     _ = params;
     _ = results;
     const func = @as(*const fn () void, @ptrFromInt(CALLBACK));
@@ -660,7 +662,7 @@ pub const ExportTypeVec = extern struct {
     extern "c" fn wasm_exporttype_vec_delete(*ExportTypeVec) void;
 };
 
-pub const Callback = fn (?*const Valtype, ?*Valtype) callconv(.C) ?*Trap;
+pub const Callback = fn (?*const Valtype, ?*Valtype) callconv(c_callconv) ?*Trap;
 
 pub const ByteVec = extern struct {
     size: usize,

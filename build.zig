@@ -15,12 +15,6 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
     });
-    const wasmer_lib = b.addStaticLibrary(.{
-        .name = "wasmer",
-        .root_source_file = b.path("src/wasmer.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
 
     if (build_examples_option) {
         var examples_dir = try std.fs.cwd().openDir("examples", .{ .iterate = true });
@@ -30,20 +24,17 @@ pub fn build(b: *std.Build) !void {
 
         while (try examples_dir_iter.next()) |entry| {
             if (entry.kind == .file and std.mem.endsWith(u8, entry.name, ".zig")) {
-                var buffer_exe_path = std.ArrayList(u8).init(b.allocator);
                 const exe_name = entry.name[0 .. entry.name.len - 4];
-
-                try buffer_exe_path.appendSlice("examples/");
-                try buffer_exe_path.appendSlice(entry.name);
-
-                const exe_path = try buffer_exe_path.toOwnedSlice();
+                const exe_path = try std.fmt.allocPrint(b.allocator, "examples/{s}", .{entry.name});
 
                 const example_exe = b.addExecutable(.{
                     .name = exe_name,
-                    .root_source_file = b.path(exe_path),
-                    .target = target,
-                    .optimize = optimize,
-                    .link_libc = true,
+                    .root_module = b.createModule(.{
+                        .root_source_file = b.path(exe_path),
+                        .target = target,
+                        .optimize = optimize,
+                        .link_libc = true,
+                    }),
                 });
 
                 example_exe.root_module.addImport("wasmer", wasmer_module);
@@ -62,14 +53,16 @@ pub fn build(b: *std.Build) !void {
     // Creates a step for unit testing. This only builds the test executable
     // but does not run it.
     const wasmer_unit_tests = b.addTest(.{
-        .root_source_file = b.path("src/wasmer.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/wasmer.zig"),
+            .target = target,
+            .optimize = optimize,
+            .link_libc = true,
+        }),
     });
 
-    wasmer_unit_tests.linkLibC();
-    wasmer_unit_tests.addLibraryPath(.{ .cwd_relative = wasmer_lib_dir_path });
-    wasmer_unit_tests.linkSystemLibrary("wasmer");
+    wasmer_unit_tests.root_module.addLibraryPath(.{ .cwd_relative = wasmer_lib_dir_path });
+    wasmer_unit_tests.root_module.linkSystemLibrary("wasmer", .{});
 
     const run_wasmer_unit_tests = b.addRunArtifact(wasmer_unit_tests);
 
@@ -81,8 +74,16 @@ pub fn build(b: *std.Build) !void {
 
     // Build docs
     const docs_step = b.step("docs", "Emit docs");
+    const docs_obj = b.addObject(.{
+        .name = "wasmer",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/wasmer.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
     const docs = b.addInstallDirectory(.{
-        .source_dir = wasmer_lib.getEmittedDocs(),
+        .source_dir = docs_obj.getEmittedDocs(),
         .install_dir = .prefix,
         .install_subdir = "docs",
     });

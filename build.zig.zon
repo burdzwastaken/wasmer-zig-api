@@ -2,7 +2,7 @@
     .fingerprint = 0xadae4aecca466a13,
     .name = .wasmer_zig_api,
     .version = "0.3.0",
-    .minimum_zig_version = "0.14.0",
+    .minimum_zig_version = "0.15.0",
     .paths = .{
         "build.zig",
         "build.zig.zon",
