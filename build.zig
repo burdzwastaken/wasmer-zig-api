@@ -3,8 +3,9 @@ const std = @import("std");
 pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
-    const wasmer_dir_path = try std.process.getEnvVarOwned(b.allocator, "WASMER_DIR");
-    const wasmer_lib_dir_path = b.pathJoin(&.{ wasmer_dir_path, "lib" });
+
+    const opt_wasmer_dir_desc = "Wasmer release location. Falls back to WASMER_DIR env var if not set";
+    const opt_wasmer_dir = b.option([]const u8, "wasmer-dir", opt_wasmer_dir_desc);
 
     const build_examples_option = b.option(bool, "examples", "Build example files") orelse false;
 
@@ -37,8 +38,9 @@ pub fn build(b: *std.Build) !void {
                     }),
                 });
 
+                const lib_path = wasmerLibPath(b, opt_wasmer_dir, &example_exe.step);
                 example_exe.root_module.addImport("wasmer", wasmer_module);
-                example_exe.root_module.addLibraryPath(.{ .cwd_relative = wasmer_lib_dir_path });
+                example_exe.root_module.addLibraryPath(.{ .cwd_relative = lib_path });
                 example_exe.root_module.linkSystemLibrary("wasmer", .{});
 
                 b.installArtifact(example_exe);
@@ -61,7 +63,8 @@ pub fn build(b: *std.Build) !void {
         }),
     });
 
-    wasmer_unit_tests.root_module.addLibraryPath(.{ .cwd_relative = wasmer_lib_dir_path });
+    const lib_path = wasmerLibPath(b, opt_wasmer_dir, &wasmer_unit_tests.step);
+    wasmer_unit_tests.root_module.addLibraryPath(.{ .cwd_relative = lib_path });
     wasmer_unit_tests.root_module.linkSystemLibrary("wasmer", .{});
 
     const run_wasmer_unit_tests = b.addRunArtifact(wasmer_unit_tests);
@@ -88,4 +91,14 @@ pub fn build(b: *std.Build) !void {
         .install_subdir = "docs",
     });
     docs_step.dependOn(&docs.step);
+}
+
+/// Attempt to resolve the Wasmer `lib` path, inserting a fail step if the base path is unknown
+fn wasmerLibPath(b: *std.Build, path: ?[]const u8, step: *std.Build.Step) []const u8 {
+    const dir = path orelse std.process.getEnvVarOwned(b.allocator, "WASMER_DIR") catch null;
+
+    const fail_message = "Wasmer location not set. Use wasmer-dir or set WASMER_DIR in env";
+    if (dir == null) step.dependOn(&b.addFail(fail_message).step);
+
+    return if (dir) |d| b.pathJoin(&.{ d, "lib" }) else "";
 }
