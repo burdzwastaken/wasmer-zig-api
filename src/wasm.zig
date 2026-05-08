@@ -1,10 +1,7 @@
 const std = @import("std");
 const testing = std.testing;
-const meta = std.meta;
-const trait = std.meta.trait;
 const log = std.log.scoped(.wasm_zig);
 
-const c_callconv: std.builtin.CallingConvention = .c;
 
 var CALLBACK: usize = undefined;
 
@@ -75,11 +72,7 @@ pub const Module = opaque {
         var byte_vec = ByteVec.initWithCapacity(bytes.len);
         defer byte_vec.deinit();
 
-        var ptr = byte_vec.data;
-        var i: usize = 0;
-        while (i < bytes.len) : (i += 1) {
-            ptr[i] = bytes[i];
-        }
+        @memcpy(byte_vec.data[0..bytes.len], bytes);
 
         return wasm_module_new(store, &byte_vec) orelse return Error.ModuleInit;
     }
@@ -100,7 +93,7 @@ pub const Module = opaque {
     extern "c" fn wasm_module_exports(?*const Module, *ExportTypeVec) void;
 };
 
-fn cb(params: ?*const Valtype, results: ?*Valtype) callconv(c_callconv) ?*Trap {
+fn cb(params: ?*const Valtype, results: ?*Valtype) callconv(.c) ?*Trap {
     _ = params;
     _ = results;
     const func = @as(*const fn () void, @ptrFromInt(CALLBACK));
@@ -662,7 +655,7 @@ pub const ExportTypeVec = extern struct {
     extern "c" fn wasm_exporttype_vec_delete(*ExportTypeVec) void;
 };
 
-pub const Callback = fn (?*const Valtype, ?*Valtype) callconv(c_callconv) ?*Trap;
+pub const Callback = fn (?*const Valtype, ?*Valtype) callconv(.c) ?*Trap;
 
 pub const ByteVec = extern struct {
     size: usize,

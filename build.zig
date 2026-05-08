@@ -1,6 +1,6 @@
 const std = @import("std");
 
-pub fn build(b: *std.Build) !void {
+pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
@@ -18,15 +18,16 @@ pub fn build(b: *std.Build) !void {
     });
 
     if (build_examples_option) {
-        var examples_dir = try std.fs.cwd().openDir("examples", .{ .iterate = true });
-        defer examples_dir.close();
+        var examples_dir = b.build_root.handle.openDir(b.graph.io, "examples", .{ .iterate = true }) catch
+            @panic("failed to open examples directory");
+        defer examples_dir.close(b.graph.io);
 
         var examples_dir_iter = examples_dir.iterate();
 
-        while (try examples_dir_iter.next()) |entry| {
+        while (examples_dir_iter.next(b.graph.io) catch @panic("failed to iterate examples")) |entry| {
             if (entry.kind == .file and std.mem.endsWith(u8, entry.name, ".zig")) {
                 const exe_name = entry.name[0 .. entry.name.len - 4];
-                const exe_path = try std.fmt.allocPrint(b.allocator, "examples/{s}", .{entry.name});
+                const exe_path = std.fmt.allocPrint(b.allocator, "examples/{s}", .{entry.name}) catch @panic("OOM");
 
                 const example_exe = b.addExecutable(.{
                     .name = exe_name,
@@ -95,7 +96,7 @@ pub fn build(b: *std.Build) !void {
 
 /// Attempt to resolve the Wasmer `lib` path, inserting a fail step if the base path is unknown
 fn wasmerLibPath(b: *std.Build, path: ?[]const u8, step: *std.Build.Step) []const u8 {
-    const dir = path orelse std.process.getEnvVarOwned(b.allocator, "WASMER_DIR") catch null;
+    const dir = path orelse b.graph.environ_map.get("WASMER_DIR");
 
     const fail_message = "Wasmer location not set. Use wasmer-dir or set WASMER_DIR in env";
     if (dir == null) step.dependOn(&b.addFail(fail_message).step);

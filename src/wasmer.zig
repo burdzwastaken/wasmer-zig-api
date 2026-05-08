@@ -1,5 +1,4 @@
 const std = @import("std");
-const builtin = @import("builtin");
 pub const wasm = @import("./wasm.zig");
 
 pub const wasi = @import("./wasi.zig");
@@ -24,40 +23,19 @@ pub const Memory = wasm.Memory;
 pub const MemoryType = wasm.MemoryType;
 pub const Limits = wasm.Limits;
 
-const OS_PATH_MAX: usize = switch (builtin.os.tag) {
-    .windows => std.os.windows.MAX_PATH,
-    .linux, .macos => std.os.linux.PATH_MAX,
-    else => std.math.maxInt(usize),
-};
-
 /// Detect Wasmer library directory
-pub fn detectWasmerLibDir(allocator: std.mem.Allocator) !?[]const u8 {
-    const argv = [_][]const u8{ "wasmer", "config", "--libdir" };
-
-    // By default, child will inherit stdout & stderr from its parents,
-    // this usually means that child's output will be printed to terminal.
-    // Here we change them to pipe and collect into `ArrayList`.
-    var child = std.process.Child.init(&argv, allocator);
-    child.stdout_behavior = .Pipe;
-    child.stderr_behavior = .Pipe;
-    var stdout = std.ArrayListUnmanaged(u8){};
-    var stderr = std.ArrayListUnmanaged(u8){};
+pub fn detectWasmerLibDir(allocator: std.mem.Allocator, io: std.Io) !?[]const u8 {
+    const result = std.process.run(allocator, io, .{
+        .argv = &.{ "wasmer", "config", "--libdir" },
+    }) catch return null;
     defer {
-        stdout.deinit(allocator);
-        stderr.deinit(allocator);
+        allocator.free(result.stdout);
+        allocator.free(result.stderr);
     }
 
-    try child.spawn();
-    try child.collectOutput(allocator, &stdout, &stderr, OS_PATH_MAX);
+    if (result.stderr.len != 0 or result.term != .exited or result.term.exited != 0) return null;
 
-    const term = try child.wait();
-
-    if (stderr.items.len != 0 or term.Exited != 0) return null;
-
-    const stdout_res = try stdout.toOwnedSlice(allocator);
-    defer allocator.free(stdout_res);
-
-    return try allocator.dupe(u8, std.mem.trimRight(u8, stdout_res, "\r\n"));
+    return try allocator.dupe(u8, std.mem.trimEnd(u8, result.stdout, "\r\n"));
 }
 
 pub fn setupTracing(verbosity_level: usize, use_colors: usize) void {
@@ -91,7 +69,7 @@ pub fn watToWasm(wat: []const u8) !ByteVec {
 extern "c" fn wat2wasm(*const wasm.ByteVec, *wasm.ByteVec) void;
 
 test "detect wasmer lib directory" {
-    const result = try detectWasmerLibDir(std.testing.allocator) orelse "";
+    const result = try detectWasmerLibDir(std.testing.allocator, std.testing.io) orelse "";
     defer std.testing.allocator.free(result);
 
     try std.testing.expectStringEndsWith(result, ".wasmer/lib");

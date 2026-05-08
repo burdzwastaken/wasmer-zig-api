@@ -8,7 +8,7 @@ All WASI APIs are also implemented.
 
 All tests from the "wasmer" lib C repository are also reimplemented on zig. You can learn more about the API of this module through rich examples.
 
-The current module works with Zig 0.15.x.
+The current module works with Zig 0.16.x.
 
 ## Wasmer C API test examples [WIP]
 
